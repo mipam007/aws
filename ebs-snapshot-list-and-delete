@@ -43,14 +43,20 @@ def delete_snapshots(snapshots_to_delete, ec2, dry_run):
         sys.exit(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3 or len(sys.argv) > 4:
+    if len(sys.argv) not in [3, 4]:
         print("Usage: python script.py <profile_name> <region> [--dry-run]")
         sys.exit(1)
 
     profile_name, region = sys.argv[1], sys.argv[2]
-    dry_run = len(sys.argv) == 4 and sys.argv[3] == '--dry-run'
-    older_than_date = datetime(2024, 1, 1, tzinfo=pytz.UTC)
+    dry_run = False
 
+    if len(sys.argv) == 4:
+        if sys.argv[3] != '--dry-run':
+            print("Invalid argument. Use '--dry-run' for dry run mode.")
+            sys.exit(1)
+        dry_run = True
+    # Date format: Y, M, D
+    older_than_date = datetime(2024, 1, 2, tzinfo=pytz.UTC)
     snapshots_to_delete = get_snapshots(profile_name, older_than_date, region)
 
     print("List of snapshots to be deleted (sorted by StartTime):")
