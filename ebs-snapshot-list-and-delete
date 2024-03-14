@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+
+import boto3
+import csv
+import sys
+import pytz
+from datetime import datetime
+
+def get_snapshots(profile_name, older_than_date, region):
+    session = boto3.Session(profile_name=profile_name)
+    ec2 = session.client('ec2', region_name=region)
+    account_number = boto3.client('sts').get_caller_identity().get('Account')
+
+    paginator = ec2.get_paginator('describe_snapshots')
+    page_iterator = paginator.paginate(OwnerIds=['self'])
+
+    snapshots_to_delete = []
+
+    with open('snapshots.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Name', 'SnapshotId', 'VolumeSize', 'StartTime'])
+
+        for page in page_iterator:
+            for snapshot in page['Snapshots']:
+                snapshot_time = snapshot['StartTime'].replace(tzinfo=pytz.UTC)
+                if snapshot_time < older_than_date:
+                    name = next((tag['Value'] for tag in snapshot.get('Tags', []) if tag['Key'] == 'Name'), None)
+                    writer.writerow([name, snapshot['SnapshotId'], snapshot['VolumeSize'], snapshot_time.strftime("%Y-%m-%d %H:%M:%S")])
+                    snapshots_to_delete.append((name, snapshot['SnapshotId'], snapshot['VolumeSize'], snapshot_time))
+
+    snapshots_to_delete.sort(key=lambda x: x[3])
+    return snapshots_to_delete, account_number
+
+def delete_snapshots(snapshots_to_delete, ec2, dry_run):
+    for name, snapshot_id, size, start_time in snapshots_to_delete:
+        try:
+            if dry_run:
+                print(f"Dry run: Would delete snapshot: {snapshot_id}")
+            else:
+                print(f"Deleting snapshot: {snapshot_id}")
+                ec2.delete_snapshot(SnapshotId=snapshot_id, DryRun=True)
+        except Exception as e:
+            print(f"Error deleting snapshot {snapshot_id}: {e}")
+
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("Usage: python script.py <profile_name> <region> <dry_run>")
+        sys.exit(1)
+
+    profile_name, region, dry_run_str = sys.argv[1], sys.argv[2], sys.argv[3]
+    older_than_date = datetime(2024, 1, 1, tzinfo=pytz.UTC)
+
+    try:
+        older_than_date = datetime.strptime(older_than_date, '%Y-%m-%d')
+    except ValueError:
+        print("Invalid date format. Please use YYYY-MM-DD.")
+        sys.exit(1)
+
+    dry_run = dry_run_str.lower() == 'true'
+
+    try:
+        snapshots_to_delete, account_number = get_snapshots(profile_name, older_than_date, region)
+        print("List of snapshots to be deleted (sorted by StartTime):")
+        for name, snapshot_id, size, start_time in snapshots_to_delete:
+            print(f"{name}, {snapshot_id}, {size}GB, {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        confirmation = input("Do you really want to delete this list of snapshots? Type 'Yes' to confirm: ")
+        if confirmation == "Yes":
+            session = boto3.Session(profile_name=profile_name)
+            ec2 = session.client('ec2', region_name=region)
+            delete_snapshots(snapshots_to_delete, ec2, dry_run)
+            print("Snapshot deletion process completed.")
+        else:
+            print("Snapshot deletion cancelled.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
