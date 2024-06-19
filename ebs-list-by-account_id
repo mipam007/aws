@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# Check if AWS Account ID is provided as an argument
+if [ -z "$1" ]; then
+  echo "Usage: $0 <AWS_ACCOUNT_ID>"
+  exit 1
+fi
+
+ACCOUNT_ID=$1
+
+# Function to find profile based on account ID
+find_profile() {
+  ACCOUNT_ID=$1
+  PROFILE=$(grep -B 1 "sso_account_id = $ACCOUNT_ID" ~/.aws/config | grep '\[profile ' | sed 's/\[profile //;s/\]//')
+  if [ -z "$PROFILE" ]; then
+    PROFILE=$(grep -B 1 "role_arn = arn:aws:iam::$ACCOUNT_ID" ~/.aws/config | grep '\[profile ' | sed 's/\[profile //;s/\]//')
+  fi
+  echo $PROFILE
+}
+
+PROFILE=$(find_profile $ACCOUNT_ID)
+
+if [ -z "$PROFILE" ]; then
+  echo "Profile for account ID $ACCOUNT_ID not found."
+  exit 1
+fi
+
+echo "Using profile: $PROFILE"
+
+# Set AWS profile environment variable
+export AWS_PROFILE=$PROFILE
+
+# Initialize the CSV file with headers
+echo "VolumeId,Size,SnapshotId,AvailabilityZone,State,CreateTime,Encrypted,VolumeType,Iops,Tags,KmsKeyId,OutpostArn,MultiAttachEnabled,Throughput" > ebs_volumes.csv
+
+# Function to get EBS volumes in a region and append to CSV
+get_ebs_volumes() {
+  REGION=$1
+  aws ec2 describe-volumes --region $REGION --output json | \
+  jq -r '.Volumes[] | [
+      .VolumeId, 
+      .Size, 
+      .SnapshotId, 
+      .AvailabilityZone, 
+      .State, 
+      .CreateTime, 
+      .Encrypted, 
+      .VolumeType, 
+      .Iops, 
+      (.Tags | tostring), 
+      .KmsKeyId, 
+      .OutpostArn, 
+      .MultiAttachEnabled, 
+      .Throughput
+    ] | @csv' >> ebs_volumes.csv
+}
+
+# Get all AWS regions
+REGIONS=$(aws ec2 describe-regions --query 'Regions[*].RegionName' --output text)
+
+# Loop through each region and get EBS volumes
+for REGION in $REGIONS; do
+  echo "Processing region: $REGION"
+  get_ebs_volumes $REGION
+done
+
+echo "EBS volumes details have been saved to ebs_volumes.csv"
+
