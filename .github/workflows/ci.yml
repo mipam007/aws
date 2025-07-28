@@ -26,24 +26,24 @@ jobs:
           test -x aws-ebs-manager.sh || \
             (echo "Script is not executable"; exit 1)
 
-      - name: Run ShellCheck on aws-ebs-manager.sh
-        uses: ludeeus/action-shellcheck@master
-        with:
-          path: aws-ebs-manager.sh
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-      - name: Run shfmt check on aws-ebs-manager.sh
+      - name: Run ShellCheck on aws-ebs-manager.sh
+        run: shellcheck aws-ebs-manager.sh
+
+      - name: Run shfmt on aws-ebs-manager.sh
         run: |
           go install mvdan.cc/sh/v3/cmd/shfmt@latest
           ~/go/bin/shfmt -d aws-ebs-manager.sh
 
       - name: Run Bats tests (if any)
         run: |
-          sudo apt-get update
           sudo apt-get install -y bats
           if compgen -G "tests/*.bats" > /dev/null; then
             bats tests/
           else
-            echo "No tests found, skipping bats."
+            echo "No tests found."
           fi
 
       - name: Run bashate on aws-ebs-manager.sh
