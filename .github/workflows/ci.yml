@@ -23,7 +23,8 @@ jobs:
 
       - name: Ensure aws-ebs-manager.sh is executable
         run: |
-          test -x aws-ebs-manager.sh || (echo "Script is not executable"; exit 1)
+          test -x aws-ebs-manager.sh || (echo "Script is \
+          not executable"; exit 1)
 
       - name: Run ShellCheck (linter)
         uses: ludeeus/action-shellcheck@master
