@@ -54,4 +54,3 @@ jobs:
           scan-type: fs
           scan-ref: .
           skip-dirs: tests,.github
-
