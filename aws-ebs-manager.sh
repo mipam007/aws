@@ -230,7 +230,7 @@ function delete_unused_volumes() {
   local region="$1"
 
   volumes=$(aws ec2 describe-volumes --region "$region" $NO_PAGER \
-    --query "Volumes[?State==`available`].[VolumeId]" --output text)
+    --query "Volumes[?State=='available'].[VolumeId]" --output text)
 
   for vol in $volumes; do
     echo "Deleting volume: $vol"
