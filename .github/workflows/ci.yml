@@ -23,20 +23,20 @@ jobs:
 
       - name: Ensure aws-ebs-manager.sh is executable
         run: |
-          test -x aws-ebs-manager.sh || (echo "Script is \
-          not executable"; exit 1)
+          test -x aws-ebs-manager.sh || \
+            (echo "Script is not executable"; exit 1)
 
-      - name: Run ShellCheck (linter)
+      - name: Run ShellCheck on aws-ebs-manager.sh
         uses: ludeeus/action-shellcheck@master
         with:
-          files: aws-ebs-manager.sh
+          path: aws-ebs-manager.sh
 
-      - name: Run shfmt (formatter check)
+      - name: Run shfmt check on aws-ebs-manager.sh
         run: |
           go install mvdan.cc/sh/v3/cmd/shfmt@latest
-          "$HOME/go/bin/shfmt" -d aws-ebs-manager.sh
+          ~/go/bin/shfmt -d aws-ebs-manager.sh
 
-      - name: Run Bats (basic test cases)
+      - name: Run Bats tests (if any)
         run: |
           sudo apt-get update
           sudo apt-get install -y bats
@@ -46,12 +46,12 @@ jobs:
             echo "No tests found, skipping bats."
           fi
 
-      - name: Run bashate (style checker)
+      - name: Run bashate on aws-ebs-manager.sh
         run: |
           pip install bashate
           bashate aws-ebs-manager.sh
 
-      - name: Run Trivy vulnerability scanner (scripts)
+      - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
