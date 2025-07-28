@@ -3,12 +3,9 @@ name: AWS EBS Manager CI
 
 on:
   push:
-    branches:
-      - main
-      - feature/**
+    branches: ["main", "feature/**"]
   pull_request:
-    branches:
-      - main
+    branches: ["main"]
 
 jobs:
   lint-and-test:
@@ -26,17 +23,17 @@ jobs:
 
       - name: Ensure aws-ebs-manager.sh is executable
         run: |
-          test -x aws-ebs-manager.sh || \
-          (echo "Script is not executable"; exit 1)
+          test -x aws-ebs-manager.sh || (echo "Script is not executable"; exit 1)
 
       - name: Run ShellCheck (linter)
         uses: ludeeus/action-shellcheck@master
+        with:
+          files: aws-ebs-manager.sh
 
       - name: Run shfmt (formatter check)
         run: |
           go install mvdan.cc/sh/v3/cmd/shfmt@latest
-          "$HOME/go/bin/shfmt" \
-            -d aws-ebs-manager.sh
+          "$HOME/go/bin/shfmt" -d aws-ebs-manager.sh
 
       - name: Run Bats (basic test cases)
         run: |
