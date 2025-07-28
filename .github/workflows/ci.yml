@@ -11,34 +11,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: GitHub Actions linter
-      uses: rhysd/actionlint@v1
+      uses: docker://rhysd/actionlint:1.6.27
 
     - name: Lint GitHub Actions workflow YAML
-      uses: ibiqlik/action-yamllint@v3
+      uses: ibiqlik/action-yamllint@v3.1
 
     - name: Ensure aws-ebs-manager.sh is executable
       run: |
         test -x aws-ebs-manager.sh || (echo "Script is not executable"; exit 1)
 
-    - name: Check BATS syntax
-      run: bats --version
-
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
     - name: Run ShellCheck (linter)
-      uses: ludeeus/action-shellcheck@v2
-      with:
-        ignore_paths: .github/
+      uses: ludeeus/action-shellcheck@master  # ✅ v2 neexistuje
 
     - name: Run shfmt (formatter check)
-      uses: mvdan/github-actions-sh@v3
-      with:
-        args: -d aws-ebs-manager.sh
+      uses: chainguard-dev/actions/shfmt@main  # ✅ nová verze
 
     - name: Run Bats (basic test cases)
       run: |
+        sudo apt-get update
         sudo apt-get install -y bats
         if compgen -G "tests/*.bats" > /dev/null; then
           bats tests/
