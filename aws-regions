@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# aws-regions.sh
+#
+# Returns a list of available AWS regions, one per line.
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# Check for required CLI tool
+if ! command -v aws >/dev/null 2>&1; then
+  echo "Error: aws CLI not found in PATH." >&2
+  exit 1
+fi
+
+# Query regions safely
+aws --region eu-central-1 ec2 describe-regions \
+  --query 'Regions[*].RegionName' \
+  --output text \
+  --no-cli-pager |
+  tr -s '[:space:]' '\n' |
+  sort
+

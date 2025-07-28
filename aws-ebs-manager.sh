@@ -200,7 +200,7 @@ function list_snapshots() {
         .[2],
         .[3],
         (.[5] // [] | map("\(.Key)=\(.Value)") | join(";"))
-      ] | @csv'
+--query "Snapshots[      ] | @csv'
   elif [[ "$format" == "human" ]]; then
     echo "$snapshots" | jq -c '.[]' | while read -r snap; do
       snapshot_id=$(echo "$snap" | jq -r '.[0]')
@@ -250,7 +250,7 @@ function delete_unused_snapshots() {
   local region="$1"
 
   snapshots=$(aws ec2 describe-snapshots --owner-ids self --region "$region" $NO_PAGER \
-    --query "Snapshots[?State==`completed`].[SnapshotId]" --output text)
+    --query "Snapshots[?State=='completed'].[SnapshotId]" --output text)
 
   for snap in $snapshots; do
     echo "Deleting snapshot: $snap"
