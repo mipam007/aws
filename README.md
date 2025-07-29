@@ -62,9 +62,11 @@ Creates two dummy `systemd` services that continuously write to separate filesys
 
 Useful for testing:
 
-- Disk I/O alerts
-- Monitoring systems
-- Log rotation behavior
+- EC2 EBS volumes
+- Filesystem behavior
+- Any use case where you need persistent write activity from a running process
+
+The services simulate continuous file writes without interruption.
 
 ---
 
