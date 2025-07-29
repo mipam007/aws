@@ -1,0 +1,7 @@
+_aws_login_profiles() {
+  local profiles
+  profiles=(${(f)"$(awk -F '[][]' '/^\[profile / {gsub(/^profile /, "", $2); print $2}' ~/.aws/config)"})
+  compadd -a profiles
+}
+
+compdef _aws_login_profiles aws-login
