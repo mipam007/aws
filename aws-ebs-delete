@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# aws-ebs-delete.sh
+
+set -euo pipefail
+IFS=$'\n\t'
+
+function check_cli() {
+  command -v aws >/dev/null || { echo "Missing: aws CLI" >&2; exit 1; }
+}
+
+function usage() {
+cat <<'EOF'
+Usage:
+  aws-ebs-delete.sh volume  <all|vol-id> <all|region>
+  aws-ebs-delete.sh snapshot <all|vol-id> <all|region>
+
+Description:
+  Safely deletes available EBS volumes or completed snapshots.
+  Does not delete attached volumes or incomplete snapshots.
+EOF
+  exit 1
+}
+
+function delete_volume() {
+  local id=$1 region=$2
+  echo "Deleting volume: $id in region: $region"
+  aws ec2 delete-volume --region "$region" --volume-id "$id" --no-cli-pager
+}
+
+function delete_unused_volumes() {
+  local region=$1
+  echo "Scanning for unused volumes in region: $region"
+  ids=$(aws ec2 describe-volumes --region "$region" --no-cli-pager \
+    --query "Volumes[?State=='available'].VolumeId" --output text)
+
+  for vol in $ids; do
+    delete_volume "$vol" "$region"
+  done
+}
+
+function delete_snapshot() {
+  local id=$1 region=$2
+  echo "Deleting snapshot: $id in region: $region"
+  aws ec2 delete-snapshot --region "$region" --snapshot-id "$id" --no-cli-pager
+}
+
+function delete_unused_snapshots() {
+  local region=$1
+  echo "Scanning for completed snapshots in region: $region"
+  ids=$(aws ec2 describe-snapshots --owner-ids self --region "$region" --no-cli-pager \
+    --query "Snapshots[?State=='completed'].SnapshotId" --output text)
+
+  for snap in $ids; do
+    delete_snapshot "$snap" "$region"
+  done
+}
+
+function loop_delete_all_regions() {
+  local kind=$1 filter=$2
+
+  readarray -t REGIONS < <(./aws-regions)
+
+  for region in "${REGIONS[@]}"; do
+    if ! aws ec2 describe-availability-zones --region "$region" --no-cli-pager &>/dev/null; then
+      echo "Skipping region $region due to access/auth error." >&2
+      continue
+    fi
+    case "$kind" in
+      volume)
+        if [[ "$filter" == "all" ]]; then
+          delete_unused_volumes "$region"
+        else
+          delete_volume "$filter" "$region"
+        fi
+        ;;
+      snapshot)
+        if [[ "$filter" == "all" ]]; then
+          delete_unused_snapshots "$region"
+        else
+          delete_snapshot "$filter" "$region"
+        fi
+        ;;
+      *) usage ;;
+    esac
+  done
+}
+
+check_cli
+kind=${1:-} filter=${2:-} region=${3:-}
+[[ -z $kind || -z $filter || -z $region ]] && usage
+
+if [[ "$region" == "all" ]]; then
+  loop_delete_all_regions "$kind" "$filter"
+else
+  case "$kind" in
+    volume)
+      [[ "$filter" == "all" ]] && delete_unused_volumes "$region" || delete_volume "$filter" "$region"
+      ;;
+    snapshot)
+      [[ "$filter" == "all" ]] && delete_unused_snapshots "$region" || delete_snapshot "$filter" "$region"
+      ;;
+    *) usage ;;
+  esac
+fi
+

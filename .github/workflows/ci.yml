@@ -1,0 +1,59 @@
+---
+name: AWS EBS Manager CI
+
+"on":
+  push:
+    branches: ["main", "feature/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: GitHub Actions linter
+        uses: docker://rhysd/actionlint:1.6.27
+
+      - name: Lint GitHub Actions workflow YAML
+        uses: ibiqlik/action-yamllint@v3.1
+
+      - name: Ensure aws-ebs-manager.sh is executable
+        run: |
+          test -x aws-ebs-manager.sh || \
+            (echo "Script is not executable"; exit 1)
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck on aws-ebs-manager.sh
+        run: shellcheck aws-ebs-manager.sh
+
+      - name: Run shfmt on aws-ebs-manager.sh
+        run: |
+          go install mvdan.cc/sh/v3/cmd/shfmt@latest
+          ~/go/bin/shfmt -d aws-ebs-manager.sh
+
+      - name: Run Bats tests (if any)
+        run: |
+          sudo apt-get install -y bats
+          if compgen -G "tests/*.bats" > /dev/null; then
+            bats tests/
+          else
+            echo "No tests found."
+          fi
+
+      - name: Run bashate on aws-ebs-manager.sh
+        run: |
+          pip install bashate
+          bashate aws-ebs-manager.sh
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          skip-dirs: tests,.github

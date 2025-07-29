@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# aws-ebs-list.sh
+
+set -euo pipefail
+IFS=$'\n\t'
+
+function check_cli() {
+  command -v aws >/dev/null || { echo "Missing: aws CLI" >&2; exit 1; }
+  command -v jq >/dev/null || { echo "Missing: jq" >&2; exit 1; }
+}
+
+function usage() {
+  echo "Usage: $0 <volume|snapshot> <all|vol-id> <all|region> <csv|human>"
+  exit 1
+}
+
+function list_volumes() {
+  local filter=$1 region=$2 format=$3
+  local volumes
+
+  if [[ $filter == "all" ]]; then
+    volumes=$(aws ec2 describe-volumes --region "$region" --no-cli-pager --query 'Volumes[*]' --output json)
+  else
+    volumes=$(aws ec2 describe-volumes --region "$region" --no-cli-pager --volume-ids "$filter" --query 'Volumes[*]' --output json)
+  fi
+
+  case $format in
+    csv)
+      echo "Region,VolumeId,State,InstanceId,Size,AZ,Tags"
+      echo "$volumes" | jq -r --arg region "$region" '
+        .[] |
+        [
+          $region,
+          .VolumeId,
+          .State,
+          (.Attachments[0].InstanceId // "-"),
+          (.Size | tostring),
+          .AvailabilityZone,
+          (.Tags // [] | map(.Key + "=" + .Value) | join(";"))
+        ] | @csv'
+      ;;
+    human)
+      echo "$volumes" | jq -c '.[]' | while read -r vol; do
+        echo "$vol" | jq -r --arg region "$region" '
+          "region:        \($region)",
+          "volume ID:     \(.VolumeId)",
+          "state:         \(.State)",
+          "instance ID:   \(.Attachments[0].InstanceId // "-")",
+          "size:          \(.Size)",
+          "AZ:            \(.AvailabilityZone)",
+          "tags:"'
+        echo "$vol" | jq -r '.Tags // [] | .[] | "               \(.Key): \(.Value)"'
+        echo
+      done
+      ;;
+    *) usage ;;
+  esac
+}
+
+function list_snapshots() {
+  local filter=$1 region=$2 format=$3
+  local snapshots
+
+  if [[ $filter == "all" ]]; then
+    snapshots=$(aws ec2 describe-snapshots --owner-ids self --region "$region" --no-cli-pager --query 'Snapshots[*]' --output json)
+  else
+    snapshots=$(aws ec2 describe-snapshots --owner-ids self --region "$region" --no-cli-pager --query "Snapshots[?VolumeId=='$filter']" --output json)
+  fi
+
+  case $format in
+    csv)
+      echo "Region,SnapshotId,VolumeId,State,StartTime,Tags"
+      echo "$snapshots" | jq -r --arg region "$region" '
+        .[] |
+        [
+          $region,
+          .SnapshotId,
+          .VolumeId,
+          .State,
+          .StartTime,
+          (.Tags // [] | map(.Key + "=" + .Value) | join(";"))
+        ] | @csv'
+      ;;
+    human)
+      echo "$snapshots" | jq -c '.[]' | while read -r snap; do
+        echo "$snap" | jq -r --arg region "$region" '
+          "region:        \($region)",
+          "snapshot ID:   \(.SnapshotId)",
+          "volume ID:     \(.VolumeId)",
+          "state:         \(.State)",
+          "start time:    \(.StartTime)",
+          "tags:"'
+        echo "$snap" | jq -r '.Tags // [] | .[] | "               \(.Key): \(.Value)"'
+        echo
+      done
+      ;;
+    *) usage ;;
+  esac
+}
+
+function loop_all_regions() {
+  local kind=$1 filter=$2 format=$3
+  local printed_header=false
+
+  readarray -t REGIONS < <(./aws-regions)
+
+  for region in "${REGIONS[@]}"; do
+    if ! aws ec2 describe-availability-zones --region "$region" --no-cli-pager &>/dev/null; then
+      echo "Skipping region $region due to access/auth error." >&2
+      continue
+    fi
+    if [[ "$format" == "csv" && "$printed_header" == true ]]; then
+      case "$kind" in
+        volume) list_volumes "$filter" "$region" "$format" | tail -n +2 ;;
+        snapshot) list_snapshots "$filter" "$region" "$format" | tail -n +2 ;;
+      esac
+    else
+      case "$kind" in
+        volume) list_volumes "$filter" "$region" "$format" ;;
+        snapshot) list_snapshots "$filter" "$region" "$format" ;;
+        *) usage ;;
+      esac
+      printed_header=true
+    fi
+  done
+}
+
+check_cli
+kind=${1:-} filter=${2:-} region=${3:-} format=${4:-}
+[[ -z $kind || -z $filter || -z $region || -z $format ]] && usage
+
+if [[ "$region" == "all" ]]; then
+  loop_all_regions "$kind" "$filter" "$format"
+else
+  case "$kind" in
+    volume) list_volumes "$filter" "$region" "$format" ;;
+    snapshot) list_snapshots "$filter" "$region" "$format" ;;
+    *) usage ;;
+  esac
+fi
+

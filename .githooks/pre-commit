@@ -1,0 +1,3 @@
+#!/bin/bash
+shellcheck aws-ebs-manager.sh || exit 1
+shfmt -d aws-ebs-manager.sh || exit 1
