@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+PROFILE="${1:-}"
+if [[ -z "$PROFILE" ]]; then
+  echo "Usage: $0 <aws-profile>" >&2
+  exit 1
+fi
+
+CONFIG_FILE="$HOME/.aws/config"
+CREDENTIALS_FILE="$HOME/.aws/credentials"
+SESSION_PROFILE="${PROFILE}-mfa"
+
+echo "[+] Loading profile: $PROFILE"
+
+# Get MFA ARN from config
+MFA_ARN=$(aws configure get mfa_serial --profile "$PROFILE" || true)
+if [[ -z "$MFA_ARN" ]]; then
+  echo "[-] MFA serial not found in config for profile $PROFILE." >&2
+  exit 1
+fi
+
+read -rp "Enter MFA code for ${MFA_ARN}: " TOKEN_CODE
+
+# Remove old session profile if it exists
+if grep -q "^\[$SESSION_PROFILE\]" "$CREDENTIALS_FILE"; then
+  echo "[*] Removing old session profile from credentials"
+  awk -v profile="[$SESSION_PROFILE]" '
+    BEGIN { skip=0 }
+    $0 ~ /^\[/ {
+      skip=($0 == profile)
+    }
+    !skip { print }
+  ' "$CREDENTIALS_FILE" > "$CREDENTIALS_FILE.tmp" && mv "$CREDENTIALS_FILE.tmp" "$CREDENTIALS_FILE"
+fi
+
+# Get session token
+SESSION_JSON=$(aws sts get-session-token \
+  --profile "$PROFILE" \
+  --serial-number "$MFA_ARN" \
+  --token-code "$TOKEN_CODE" \
+  --output json)
+
+AWS_ACCESS_KEY_ID=$(echo "$SESSION_JSON" | jq -r '.Credentials.AccessKeyId')
+AWS_SECRET_ACCESS_KEY=$(echo "$SESSION_JSON" | jq -r '.Credentials.SecretAccessKey')
+AWS_SESSION_TOKEN=$(echo "$SESSION_JSON" | jq -r '.Credentials.SessionToken')
+
+# Append new session profile to credentials
+{
+  echo "[$SESSION_PROFILE]"
+  echo "aws_access_key_id = $AWS_ACCESS_KEY_ID"
+  echo "aws_secret_access_key = $AWS_SECRET_ACCESS_KEY"
+  echo "aws_session_token = $AWS_SESSION_TOKEN"
+  echo
+} >> "$CREDENTIALS_FILE"
+
+echo "[+] MFA session profile created: $SESSION_PROFILE"
+
